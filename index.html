@@ -34,9 +34,11 @@
             transform: translateY(100%);
             transition: transform 0.3s ease;
             z-index: 100;
+            display: none;
         }
         #dialog-box.active {
             transform: translateY(0);
+            display: block;
         }
         #dialog-text {
             margin: 0 0 15px 0;
@@ -75,42 +77,278 @@
             border-radius: 20px;
             font-size: 14px;
             z-index: 50;
+            pointer-events: none;
+        }
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
         }
     </style>
 </head>
 <body>
+    <div class="loading" id="loading">Carregando jogo...</div>
     <div id="game-container"></div>
     <div id="hint">🔼🔽◀️▶️ Movimentar | <strong>E</strong> Interagir | <strong>R</strong> NPC Iniciativa</div>
     
     <div id="dialog-box">
         <div id="dialog-text">Aguardando interação...</div>
         <div class="dialog-actions">
-            <button class="dialog-btn" onclick="enviarResposta('Continuar conversando')">Responder</button>
+            <input type="text" id="player-input" placeholder="Digite sua resposta..." style="flex-grow:1; margin-right:10px; padding:8px; border-radius:5px; border:1px solid #00d4ff;">
+            <button class="dialog-btn" onclick="enviarResposta()">Enviar</button>
             <button class="dialog-btn close" onclick="fecharDialogo()">Fechar</button>
         </div>
     </div>
 
-    <script src="game.js"></script>
     <script>
-        let ultimaMensagem = "";
+        // =============== CONFIGURAÇÃO ===============
+        // ⚠️ SUBSTITUA PELA SUA URL DO RENDER ⚠️
+        const API_BASE_URL = "https://seu-usuario-github-io.onrender.com";
+        // ============================================
         
-        function enviarResposta(resposta) {
-            if (!resposta || resposta === "Continuar conversando") {
-                resposta = prompt("O que você quer dizer?", "Olá!");
-            }
-            if (resposta) {
-                conversarComNPC(resposta);
-            }
+        // Variáveis globais
+        let game;
+        let dialogActive = false;
+        let currentNPC = "aldeao_01";
+        
+        // Funções de diálogo
+        function mostrarDialogo(texto, isNPC = true) {
+            const prefixo = isNPC ? "NPC: " : "Você: ";
+            document.getElementById('dialog-text').textContent = prefixo + texto;
+            document.getElementById('dialog-box').classList.add('active');
+            document.getElementById('player-input').focus();
+            dialogActive = true;
         }
         
         function fecharDialogo() {
             document.getElementById('dialog-box').classList.remove('active');
+            dialogActive = false;
         }
         
-        function mostrarDialogo(texto) {
-            document.getElementById('dialog-text').textContent = texto;
-            document.getElementById('dialog-box').classList.add('active');
+        function enviarResposta() {
+            const input = document.getElementById('player-input');
+            const mensagem = input.value.trim();
+            
+            if (mensagem) {
+                mostrarDialogo(mensagem, false);
+                input.value = '';
+                conversarComNPC(mensagem);
+            }
         }
+        
+        async function conversarComNPC(mensagem) {
+            try {
+                document.getElementById('dialog-text').textContent = "💭 NPC está pensando...";
+                
+                const resposta = await fetch(`${API_BASE_URL}/conversar`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        mensagem: mensagem,
+                        npcId: currentNPC,
+                        contexto: "Vila Central, dia ensolarado"
+                    })
+                });
+                
+                if (!resposta.ok) {
+                    throw new Error(`Erro HTTP: ${resposta.status}`);
+                }
+                
+                const dados = await resposta.json();
+                
+                if (dados.erro) {
+                    mostrarDialogo(`Erro: ${dados.erro}`);
+                } else {
+                    mostrarDialogo(dados.resposta);
+                }
+            } catch (erro) {
+                console.error("Erro na conversa:", erro);
+                mostrarDialogo("NPC está offline. Verifique seu backend no Render.");
+            }
+        }
+        
+        async function pedirIniciativaNPC() {
+            try {
+                mostrarDialogo("Aguardando iniciativa do NPC...");
+                
+                const resposta = await fetch(`${API_BASE_URL}/iniciativa`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        npcId: currentNPC,
+                        contexto: "O jogador está parado observando"
+                    })
+                });
+                
+                if (!resposta.ok) {
+                    throw new Error(`Erro HTTP: ${resposta.status}`);
+                }
+                
+                const dados = await resposta.json();
+                
+                if (dados.erro) {
+                    mostrarDialogo(`Erro: ${dados.erro}`);
+                } else {
+                    mostrarDialogo(dados.resposta);
+                }
+            } catch (erro) {
+                console.error("Erro na iniciativa:", erro);
+                mostrarDialogo("NPC não tomou iniciativa agora");
+            }
+        }
+        
+        // Inicialização do Phaser quando a página carregar
+        window.onload = function() {
+            document.getElementById('loading').style.display = 'none';
+            
+            const config = {
+                type: Phaser.AUTO,
+                width: 800,
+                height: 600,
+                parent: 'game-container',
+                backgroundColor: '#2d2d2d',
+                physics: {
+                    default: 'arcade',
+                    arcade: {
+                        gravity: { y: 0 },
+                        debug: false
+                    }
+                },
+                scene: {
+                    preload: preload,
+                    create: create,
+                    update: update
+                }
+            };
+            
+            game = new Phaser.Game(config);
+        };
+        
+        // Cenas do Phaser
+        function preload() {
+            this.load.image('ground', 'https://i.imgur.com/gKZ9aYp.png');
+            this.load.image('npc1', 'https://i.imgur.com/3JXQ2rS.png');
+            this.load.image('npc2', 'https://i.imgur.com/5mK5y5F.png');
+            this.load.spritesheet('player', 'https://i.imgur.com/pDzqPqC.png', {
+                frameWidth: 16,
+                frameHeight: 24
+            });
+        }
+        
+        function create() {
+            // Criar chão
+            this.add.tileSprite(400, 300, 800, 600, 'ground');
+            
+            // Criar NPCs
+            const npc1 = this.add.image(200, 200, 'npc1').setScale(2);
+            const npc2 = this.add.image(600, 400, 'npc2').setScale(2);
+            
+            // Criar jogador
+            const player = this.physics.add.sprite(400, 300, 'player').setScale(2);
+            
+            // Controles
+            const cursors = this.input.keyboard.createCursorKeys();
+            const interactKey = this.input.keyboard.addKey('E');
+            const initiativeKey = this.input.keyboard.addKey('R');
+            
+            // Configurar físicas
+            this.physics.world.setBounds(0, 0, 800, 600);
+            player.setCollideWorldBounds(true);
+            
+            // Animações
+            this.anims.create({
+                key: 'down',
+                frames: this.anims.generateFrameNumbers('player', { start: 0, end: 2 }),
+                frameRate: 10,
+                repeat: -1
+            });
+            
+            // Atualizar estado do jogo
+            this.update = function() {
+                if (dialogActive) return;
+                
+                player.setVelocity(0);
+                const speed = 200;
+                
+                if (cursors.left.isDown) {
+                    player.setVelocityX(-speed);
+                    player.anims.play('left', true);
+                } else if (cursors.right.isDown) {
+                    player.setVelocityX(speed);
+                    player.anims.play('right', true);
+                }
+                
+                if (cursors.up.isDown) {
+                    player.setVelocityY(-speed);
+                    player.anims.play('up', true);
+                } else if (cursors.down.isDown) {
+                    player.setVelocityY(speed);
+                    player.anims.play('down', true);
+                }
+                
+                if (player.body.velocity.x === 0 && player.body.velocity.y === 0) {
+                    player.anims.stop();
+                }
+                
+                // Verificar proximidade com NPCs
+                const distanciaNPC1 = Phaser.Math.Distance.Between(player.x, player.y, npc1.x, npc1.y);
+                const distanciaNPC2 = Phaser.Math.Distance.Between(player.x, player.y, npc2.x, npc2.y);
+                
+                if (interactKey.isDown && !dialogActive) {
+                    if (distanciaNPC1 < 100) {
+                        currentNPC = "aldeao_01";
+                        mostrarDialogo("Velho Sábio: Olá, viajante! Como posso ajudá-lo?");
+                    } else if (distanciaNPC2 < 100) {
+                        currentNPC = "aldeao_02";
+                        mostrarDialogo("Guardinha: Pare aí! Identificação, por favor.");
+                    }
+                }
+                
+                if (initiativeKey.isDown && !dialogActive) {
+                    pedirIniciativaNPC();
+                }
+            };
+            
+            // Texto explicativo
+            this.add.text(10, 10, 'RPG com IA - NPCs Inteligentes', {
+                fontSize: '20px',
+                fill: '#00d4ff',
+                fontStyle: 'bold'
+            }).setShadow(2, 2, '#000000', 2);
+            
+            this.add.text(10, 580, 'Aproxime-se de um NPC e pressione E para conversar', {
+                fontSize: '14px',
+                fill: '#ffffff'
+            });
+        }
+        
+        function update() {
+            // Atualização é gerenciada dentro da cena create
+        }
+        
+        // Tornar funções globais para os botões HTML
+        window.mostrarDialogo = mostrarDialogo;
+        window.fecharDialogo = fecharDialogo;
+        window.enviarResposta = enviarResposta;
+        window.conversarComNPC = conversarComNPC;
+        window.pedirIniciativaNPC = pedirIniciativaNPC;
+        
+        // Tecla Enter para enviar mensagem
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && dialogActive) {
+                enviarResposta();
+            }
+            if (event.key === 'Escape' && dialogActive) {
+                fecharDialogo();
+            }
+        });
     </script>
 </body>
 </html>
