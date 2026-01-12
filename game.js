@@ -10,7 +10,7 @@ const config = {
 const game = new Phaser.Game(config);
 let gridEngine;
 let hero;
-let apiBaseUrl = "https://SEU-BACKEND.onrender.com"; // SUBSTITUA PELA URL DO SEU BACKEND
+let apiBaseUrl = "https://seu-usuario-github-io.onrender.com"; // SUBSTITUA PELA URL DO SEU BACKEND
 
 function preload() {
     // Carrega um tileset simples (substitua pela URL da sua imagem)
